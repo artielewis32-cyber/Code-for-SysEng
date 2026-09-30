@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------
-   Tokens â€” light is the default; dark is its own set of steps, applied when
+   Tokens — light is the default; dark is its own set of steps, applied when
    the OS prefers dark (unless the user forced light) or when forced dark.
    ------------------------------------------------------------------------ */
 :root {
@@ -146,7 +146,7 @@ h1 { font-size: 17px; }
 .banner-icon { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; color: #fff; }
 .banner[data-level="critical"] { background: var(--critical-bg); border-color: var(--critical); }
 .banner[data-level="critical"] .banner-icon { background: var(--critical); }
-.banner[data-level="critical"] .banner-icon::before { content: "âœ•"; }
+.banner[data-level="critical"] .banner-icon::before { content: "✕"; }
 .banner[data-level="warning"] { background: var(--warning-bg); border-color: var(--warning); }
 .banner[data-level="warning"] .banner-icon { background: var(--warning); color: #3a2a00; }
 .banner[data-level="warning"] .banner-icon::before { content: "!"; }
@@ -178,7 +178,7 @@ h1 { font-size: 17px; }
 .chip[data-mode="IDLE"] .chip-icon { border-radius: 2px; }
 .chip[data-mode="FAULT"] { background: var(--critical); color: #fff; }
 .chip[data-mode="FAULT"] .chip-icon { background: transparent; width: auto; height: auto; }
-.chip[data-mode="FAULT"] .chip-icon::before { content: "âœ•"; font-size: 12px; }
+.chip[data-mode="FAULT"] .chip-icon::before { content: "✕"; font-size: 12px; }
 .chip[data-mode="NONE"] { font-weight: 500; letter-spacing: 0; color: var(--text-muted); }
 
 /* Toolbar ---------------------------------------------------------------- */

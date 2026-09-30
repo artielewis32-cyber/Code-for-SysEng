@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wind Tunnel Telemetry</title>
+  <meta name="description" content="Live drag, lift and airspeed telemetry from the desktop wind tunnel, read over USB serial in the browser.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M6 12h14a3 3 0 1 0-3-3M6 17h19a3 3 0 1 1-3 3M6 22h9' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7"/><path d="M6 12h14a3 3 0 1 0-3-3M6 17h19a3 3 0 1 1-3 3M6 22h9"/></svg>
+      <div>
+        <h1>Wind Tunnel Telemetry</h1>
+        <p class="tagline">Desktop wind tunnel · live drag, lift &amp; airspeed</p>
+      </div>
+    </div>
+    <div class="controls">
+      <span id="linkStatus" class="link-pill" data-state="off"><span class="dot" aria-hidden="true"></span><span class="txt">Not connected</span></span>
+      <button id="btnConnect" class="btn primary" type="button">Connect tunnel (USB)</button>
+      <button id="btnDemo" class="btn" type="button">Run demo</button>
+      <button id="btnFault" class="btn" type="button" hidden>Simulate lid fault</button>
+      <button id="btnDisconnect" class="btn" type="button" hidden>Disconnect</button>
+      <button id="btnTheme" class="btn icon" type="button" aria-label="Switch light/dark theme" title="Switch light/dark theme">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <p id="serialNote" class="note" hidden>
+      This browser can't open USB serial ports. Use <strong>Chrome</strong> or <strong>Edge</strong> on a desktop computer to connect the tunnel. Demo mode still works here.
+    </p>
+
+    <div id="banner" class="banner" role="alert" hidden>
+      <span class="banner-icon" aria-hidden="true"></span>
+      <div><strong class="banner-title"></strong> <span class="banner-text"></span></div>
+    </div>
+
+    <!-- Mode + live readouts -->
+    <section class="readouts" aria-label="Live readouts">
+      <div class="tile mode-tile">
+        <span class="tile-label">Mode</span>
+        <span id="modeChip" class="chip" data-mode="NONE"><span class="chip-icon" aria-hidden="true"></span><span class="chip-text">No data</span></span>
+        <span id="deviceMsg" class="tile-sub" title="Latest status message from the tunnel">Connect the tunnel or run the demo.</span>
+      </div>
+      <div class="tile">
+        <span class="tile-label">Airspeed</span>
+        <span class="tile-value"><span id="vAirspeed">—</span><small>m/s</small></span>
+        <span class="tile-sub" id="vAirspeedKmh">— km/h</span>
+      </div>
+      <div class="tile">
+        <span class="tile-label">Drag</span>
+        <span class="tile-value"><span id="vDrag">—</span><small>N</small></span>
+        <span class="tile-sub" id="vDragSub">Horizontal force</span>
+      </div>
+      <div class="tile">
+        <span class="tile-label">Lift / downforce</span>
+        <span class="tile-value"><span id="vLift">—</span><small>N</small></span>
+        <span class="tile-sub" id="vLiftSub">Vertical force</span>
+      </div>
+      <div class="tile">
+        <span class="tile-label">Drag coefficient C<sub>d</sub></span>
+        <span class="tile-value"><span id="vCd">—</span></span>
+        <span class="tile-sub" id="vCdCheck">Shown in Force mode</span>
+      </div>
+      <div class="tile">
+        <span class="tile-label">Lift coefficient C<sub>l</sub></span>
+        <span class="tile-value"><span id="vCl">—</span></span>
+        <span class="tile-sub" id="vClCheck">Shown in Force mode</span>
+      </div>
+      <div class="tile">
+        <span class="tile-label">Update interval</span>
+        <span class="tile-value"><span id="vRate">—</span><small>ms</small></span>
+        <span class="tile-sub status-line" id="vRateSub">Requirement: ≤ 1000 ms</span>
+      </div>
+    </section>
+
+    <!-- Controls that affect the charts sit in one row above them -->
+    <section class="toolbar" aria-label="Chart settings">
+      <label class="field">
+        <span>Time window</span>
+        <select id="selWindow">
+          <option value="30">30 s</option>
+          <option value="60" selected>1 min</option>
+          <option value="120">2 min</option>
+          <option value="300">5 min</option>
+          <option value="600">10 min</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Model frontal area</span>
+        <span class="input-unit"><input id="inpArea" type="number" min="100" max="100000" step="50" inputmode="decimal"><em>mm²</em></span>
+      </label>
+      <button id="btnPause" class="btn" type="button" aria-pressed="false">Pause charts</button>
+      <span class="toolbar-hint">Frontal area should match the value entered on the tunnel. The dashboard uses it to double-check C<sub>d</sub> and C<sub>l</sub>.</span>
+    </section>
+
+    <section class="charts">
+      <article class="card span-2">
+        <header class="card-head">
+          <h2>Drag &amp; lift over time</h2>
+          <p>Newtons. Negative lift means downforce.</p>
+        </header>
+        <div class="chart-box tall"><canvas id="forceChart" aria-label="Line chart of drag and lift force over time" role="img"></canvas></div>
+      </article>
+      <article class="card">
+        <header class="card-head">
+          <h2>Airspeed</h2>
+          <p>Test-section airspeed, m/s</p>
+        </header>
+        <div class="chart-box"><canvas id="airspeedChart" aria-label="Line chart of airspeed over time" role="img"></canvas></div>
+      </article>
+      <article class="card">
+        <header class="card-head">
+          <h2>Drag vs airspeed</h2>
+          <p>Force mode only. Tick up to two saved runs below to compare.</p>
+        </header>
+        <div class="chart-box"><canvas id="scatterChart" aria-label="Scatter chart of drag against airspeed" role="img"></canvas></div>
+      </article>
+    </section>
+
+    <!-- Runs -->
+    <section class="card runs" aria-labelledby="runsTitle">
+      <header class="card-head">
+        <h2 id="runsTitle">Test runs</h2>
+        <p>Record a run for each model, then compare results or export them as CSV for analysis or checking against CFD.</p>
+      </header>
+      <div class="run-controls">
+        <label class="field grow">
+          <span>Model name</span>
+          <input id="inpModel" type="text" placeholder="e.g. Car A – rev 2" maxlength="60">
+        </label>
+        <button id="btnRecord" class="btn record" type="button" disabled><span class="rec-dot" aria-hidden="true"></span><span class="txt">Start recording</span></button>
+        <span id="recStatus" class="rec-status" aria-live="polite"></span>
+        <span class="spacer"></span>
+        <label class="btn file-btn">Import CSV<input id="inpImport" type="file" accept=".csv,text/csv" multiple></label>
+        <button id="btnExportSession" class="btn" type="button" disabled>Export session CSV</button>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="runsTable">
+          <thead>
+            <tr>
+              <th scope="col">Compare</th>
+              <th scope="col">Model</th>
+              <th scope="col" class="num">Duration</th>
+              <th scope="col" class="num">Max airspeed</th>
+              <th scope="col" class="num">Peak drag</th>
+              <th scope="col" class="num">Peak downforce</th>
+              <th scope="col" class="num">Mean C<sub>d</sub></th>
+              <th scope="col" class="num">Mean C<sub>l</sub></th>
+              <th scope="col"><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p id="runsEmpty" class="empty">No saved runs yet. Connect the tunnel (or run the demo), enter a model name and press <em>Start recording</em>.</p>
+      </div>
+      <p class="fineprint">Mean C<sub>d</sub> / C<sub>l</sub> are averaged over Force-mode samples at 3 m/s or faster. Results are indicative, not certified (CON-04).</p>
+    </section>
+
+    <section class="drawers">
+      <details class="card" id="tableDetails">
+        <summary>Table view: latest 25 samples</summary>
+        <div class="table-wrap">
+          <table class="data-table compact" id="sampleTable">
+            <thead><tr><th>timestamp</th><th>mode</th><th class="num">airspeed_ms</th><th class="num">drag_N</th><th class="num">lift_N</th><th class="num">Cd</th><th class="num">Cl</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </details>
+      <details class="card" id="consoleDetails">
+        <summary>Serial console</summary>
+        <pre id="console" class="console" aria-live="off"></pre>
+      </details>
+    </section>
+  </main>
+
+  <footer class="foot">
+    Reads <code>timestamp, mode, airspeed_ms, drag_N, lift_N, Cd, Cl</code> CSV at 115200 baud (SW-04, REQ-022).
+    Air density 1.225 kg/m³ (SW-08).
+  </footer>
+</body>
+</html>
