@@ -14,6 +14,7 @@ A live web dashboard for the **desktop wind tunnel**. It shows drag, lift/downfo
 | **Fault & status display** | Shows the tunnel's status messages (self-check, tare) and a red banner in FAULT mode. Also warns if the link goes quiet or if smoke mode exceeds 4 m/s | REQ-012/014/028, REQ-006 |
 | **Test runs** | Record a run per model, then compare peak drag, peak downforce and mean C<sub>d</sub>/C<sub>l</sub>. Overlay up to two runs on the drag-vs-airspeed chart | ConOps Scenario A |
 | **CSV export/import** | Export a run or the whole session for analysis or CFD comparison, and import CSVs back in | SN-08, F1-14 |
+| **End-of-session report** | When the session ends (End session, Stop demo, or the tunnel is unplugged), a report appears with a summary, a list of **test points** (each steady airspeed held ≥ 2 s, with average airspeed, drag, lift, C<sub>d</sub>, C<sub>l</sub>), an event log, and every reading. Download it as CSV or print / save it as PDF | SN-08, ConOps Scenario A |
 | **Demo mode** | Built-in simulator that behaves like the tunnel, so the site works with no hardware attached | — |
 | Light/dark theme, phone layout, table view, raw serial console | | |
 
@@ -60,7 +61,8 @@ A minimal Arduino sketch showing exactly this output is in [`firmware/serial_out
 3. Click **Connect tunnel (USB)** and pick the Arduino's port (usually "USB Serial" or "Arduino Uno"). Note that opening the port usually resets an Uno, so you'll see the boot and self-check messages come through.
 4. Enter the model's **frontal area** in mm². Use the same value that's entered on the tunnel.
 5. Type a **model name** and press **Start recording**. Run the test, then press **Stop & save**.
-6. Repeat for other models. Tick up to two runs to overlay them on the drag-vs-airspeed chart, or export CSVs.
+6. When you've finished, click **End session**. The session report appears at the top of the page. Use **Download test points (CSV)** for the summary table, **Download all readings (CSV)** for every data point, or **Print / save as PDF**. Click **Report so far** while a session is running to see the report without ending it.
+7. Repeat for other models. Tick up to two runs to overlay them on the drag-vs-airspeed chart, or export CSVs.
 
 > The Arduino IDE's Serial Monitor and the dashboard can't use the port at the same time. Close the Serial Monitor first.
 
@@ -88,6 +90,7 @@ js/serial.js               Web Serial connection
 js/simulator.js            Demo-mode tunnel simulator
 js/charts.js               Real-time charts (Chart.js)
 js/runs.js                 Run recording, statistics, CSV import/export
+js/report.js               End-of-session report: test-point detection, CSV output
 js/app.js                  Wires it all together
 firmware/                  Example Arduino serial output
 sample-data/               Example run CSV (demo data) you can import

@@ -225,6 +225,42 @@ h1 { font-size: 17px; }
 .empty { color: var(--text-muted); margin: 14px 0 4px; }
 .fineprint { color: var(--text-muted); font-size: 12px; margin: 10px 0 0; }
 
+/* Session report --------------------------------------------------------- */
+.report { border-color: var(--accent); padding: 20px 22px; scroll-margin-top: 90px; }
+.report h2 { font-size: 18px; }
+.report h3 { font-size: 14px; margin: 22px 0 4px; }
+.report-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px 20px; }
+.report-meta { margin: 4px 0 0; color: var(--text-secondary); font-size: 13px; }
+.report-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.report-note { margin: 0 0 8px; color: var(--text-muted); font-size: 12px; }
+.report-summary { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 16px; }
+.report-summary .stat { padding: 10px 12px; border-radius: 10px; background: var(--surface-2); }
+.report-summary .stat b { display: block; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+.report-summary .stat span { color: var(--text-secondary); font-size: 12px; }
+.report-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 24px; }
+.event-log { margin: 8px 0 0; padding: 0; list-style: none; max-height: 360px; overflow: auto; font-size: 13px; }
+.event-log li { display: flex; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--grid); }
+.event-log time { flex: none; width: 52px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.event-log .fault { color: var(--critical); font-weight: 600; }
+.readings-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; }
+.field.inline { flex-direction: row; align-items: center; gap: 8px; }
+.field.inline select { height: 30px; }
+.readings-wrap { max-height: 360px; overflow: auto; margin-top: 8px; }
+.readings-wrap thead th { position: sticky; top: 0; background: var(--surface-1); }
+.mode-cell-FAULT { color: var(--critical); font-weight: 600; }
+@media (max-width: 860px) { .report-cols { grid-template-columns: minmax(0, 1fr); } }
+
+/* Printing the report: only the report is printed, tables run full length. */
+@media print {
+  body { background: #fff; color: #000; }
+  .topbar, .readouts, .toolbar, .charts, .runs, .drawers, .foot, .note, .banner, .report-actions, .readings-head label { display: none !important; }
+  main { padding: 0; max-width: none; }
+  .report { border: none; box-shadow: none; padding: 0; }
+  .readings-wrap, .event-log { max-height: none; overflow: visible; }
+  .report-cols { grid-template-columns: 1fr; }
+  .data-table td, .data-table th { padding: 3px 6px; }
+}
+
 /* Drawers ---------------------------------------------------------------- */
 .drawers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
 details.card summary { cursor: pointer; font-weight: 600; font-size: 14px; }

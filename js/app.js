@@ -7,6 +7,7 @@ import { SerialSource } from './serial.js';
 import { Simulator } from './simulator.js';
 import { Dashboard } from './charts.js';
 import { RunStore, newRun, runStats, runToCsv, csvToRun, downloadText, safeFileName } from './runs.js';
+import { buildReport, testPointsCsv, readingsCsv, perSecond, fmtClock } from './report.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -27,6 +28,9 @@ const state = {
   recording: null,       // run currently being recorded
   compare: new Set(),    // run ids overlaid on the scatter chart (max 2)
   consoleLines: [],
+  events: [],            // { t, kind: 'mode' | 'message', text, mode? } for the session report
+  startedAt: null,       // wall-clock start of the session
+  report: null,          // the report currently on screen
   lastMessage: '',
 };
 
@@ -55,6 +59,7 @@ function handleLine(line) {
   if (!parsed) return;
   if (parsed.type === 'message') {
     state.lastMessage = parsed.text;
+    if (state.source) state.events.push({ t: (performance.now() - state.sessionStart) / 1000, kind: 'message', text: parsed.text });
     $('deviceMsg').textContent = parsed.text;
     $('deviceMsg').title = parsed.text;
     return;
@@ -70,6 +75,9 @@ function handleLine(line) {
 
   const { type, ...fields } = parsed;
   const sample = { t: (now - state.sessionStart) / 1000, ...fields };
+  if (!state.latest || state.latest.mode !== sample.mode) {
+    state.events.push({ t: sample.t, kind: 'mode', mode: sample.mode, text: `Entered ${sample.mode} mode` });
+  }
   state.samples.push(sample);
   if (state.samples.length > MAX_SESSION_SAMPLES) state.samples.splice(0, state.samples.length - MAX_SESSION_SAMPLES);
   state.latest = sample;
@@ -198,13 +206,17 @@ function beginSession(source) {
   state.lastArrival = 0;
   state.latest = null;
   state.lastMessage = '';
+  state.events = [];
+  state.startedAt = new Date();
   resetReadouts();
   $('deviceMsg').textContent = source === 'demo' ? 'Starting demo…' : 'Connected. Waiting for the tunnel…';
   syncButtons();
 }
 
-function endSession(reason) {
+function endSession(reason, showReport = true) {
   if (state.recording) stopRecording();
+  // End of the tunnel's run: produce the session report automatically.
+  if (showReport && state.samples.length) openReport(true);
   state.source = null;
   state.serial = null;
   state.sim = null;
@@ -227,7 +239,7 @@ async function connectSerial() {
     }
     return;
   }
-  stopDemo();
+  stopDemo(false);
   state.serial = serial;
   beginSession('serial');
   logConsole('--- connected at 115200 baud ---');
@@ -242,8 +254,8 @@ function startDemo() {
   sim.start();
 }
 
-function stopDemo() {
-  if (state.sim) { state.sim.stop(); endSession('Demo stopped.'); }
+function stopDemo(showReport = true) {
+  if (state.sim) { state.sim.stop(); endSession('Demo stopped.', showReport); }
 }
 
 async function disconnect() {
@@ -259,6 +271,7 @@ function syncButtons() {
   $('btnDemo').textContent = src === 'demo' ? 'Stop demo' : 'Run demo';
   $('btnFault').hidden = src !== 'demo';
   $('btnDisconnect').hidden = src !== 'serial';
+  $('btnReportNow').hidden = !src || state.samples.length === 0;
   $('btnRecord').disabled = !src;
   $('btnExportSession').disabled = state.samples.length === 0 && !src;
 }
@@ -371,6 +384,92 @@ function exportSession() {
 }
 
 // ---------------------------------------------------------------------------
+// End-of-session report
+// ---------------------------------------------------------------------------
+function openReport(ended) {
+  const model = $('inpModel').value.trim();
+  state.report = buildReport({
+    samples: state.samples.slice(),
+    events: state.events.slice(),
+    meta: {
+      ended,
+      model,
+      source: state.source === 'demo' ? 'Demo (simulated data)' : 'Wind tunnel (USB)',
+      startedAt: (state.startedAt ?? new Date()).toISOString(),
+      endedAt: new Date().toISOString(),
+      frontalAreaMm2: Number($('inpArea').value) || null,
+    },
+  });
+  renderReport();
+  const el = $('report');
+  el.hidden = false;
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderReport() {
+  const r = state.report;
+  if (!r) return;
+  const sm = r.summary;
+  const start = new Date(r.meta.startedAt);
+  $('reportTitle').textContent = r.meta.ended ? 'Session report' : 'Session report (so far)';
+  $('reportMeta').textContent = [
+    start.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }),
+    `${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}–${new Date(r.meta.endedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+    r.meta.source,
+    r.meta.model && `Model: ${r.meta.model}`,
+    r.meta.frontalAreaMm2 && `Frontal area ${r.meta.frontalAreaMm2} mm²`,
+  ].filter(Boolean).join(' · ');
+
+  const mt = sm.modeTime;
+  const stat = (value, label) => `<div class="stat"><b>${value}</b><span>${label}</span></div>`;
+  $('reportSummary').innerHTML = [
+    stat(fmtClock(sm.duration), 'Duration'),
+    stat(sm.count.toLocaleString(), 'Readings'),
+    stat(r.points.length, 'Test points'),
+    stat(sm.maxAirspeed === null ? '—' : `${sm.maxAirspeed.toFixed(1)} m/s`, `Max airspeed${sm.maxAirspeed === null ? '' : ` (${(sm.maxAirspeed * 3.6).toFixed(0)} km/h)`}`),
+    stat(sm.peakDrag === null ? '—' : `${sm.peakDrag.toFixed(3)} N`, 'Peak drag'),
+    stat(sm.peakDownforce === null ? '—' : `${sm.peakDownforce.toFixed(3)} N`, 'Peak downforce'),
+    stat(fmt(sm.meanCd, 3), 'Mean C<sub>d</sub> (Force ≥ 3 m/s)'),
+    stat(fmt(sm.meanCl, 3), 'Mean C<sub>l</sub> (Force ≥ 3 m/s)'),
+    stat(`${fmtClock(mt.FORCE)} / ${fmtClock(mt.SMOKE)}`, 'Time in Force / Smoke'),
+    stat(sm.faults, sm.faults === 1 ? 'Fault' : 'Faults'),
+  ].join('');
+
+  $('pointsTable').querySelector('tbody').innerHTML = r.points.map((p, i) => `
+    <tr><td class="num">${i + 1}</td><td>${p.mode}</td><td class="num">${fmtClock(p.start)}</td><td class="num">${p.hold.toFixed(1)} s</td>
+    <td class="num">${fmt(p.airspeed_ms, 2)}</td><td class="num">${fmt(p.airspeed_ms === null ? null : p.airspeed_ms * 3.6, 1)}</td>
+    <td class="num">${fmt(p.drag_N, 3)}</td><td class="num">${fmt(p.lift_N, 3)}</td>
+    <td class="num">${fmt(p.Cd, 3)}</td><td class="num">${fmt(p.Cl, 3)}</td><td class="num">${p.count}</td></tr>`).join('');
+  $('pointsEmpty').hidden = r.points.length > 0;
+
+  $('eventLog').innerHTML = r.events.length
+    ? r.events.map((e) => `<li><time>${fmtClock(e.t)}</time><span class="${/fault/i.test(e.text) ? 'fault' : ''}">${escapeHtml(e.text)}</span></li>`).join('')
+    : '<li><span>No events recorded.</span></li>';
+
+  renderReadings();
+}
+
+function renderReadings() {
+  const r = state.report;
+  if (!r) return;
+  const all = $('selReadings').value === 'all';
+  const rows = all ? r.samples : perSecond(r.samples);
+  $('readingsTable').querySelector('tbody').innerHTML = rows.map((s) => `
+    <tr><td>${fmtClock(s.t, 1)}</td><td class="mode-cell-${s.mode}">${s.mode}</td><td class="num">${fmt(s.airspeed_ms, 2)}</td>
+    <td class="num">${fmt(s.drag_N, 3)}</td><td class="num">${fmt(s.lift_N, 3)}</td>
+    <td class="num">${fmt(s.Cd, 3)}</td><td class="num">${fmt(s.Cl, 3)}</td></tr>`).join('');
+  $('readingsNote').textContent = all
+    ? `Showing all ${r.samples.length.toLocaleString()} readings.`
+    : `Showing ${rows.length.toLocaleString()} of ${r.samples.length.toLocaleString()} readings (one per second). “Download all readings” saves every one.`;
+}
+
+function reportFileStem() {
+  const r = state.report;
+  const stamp = r.meta.startedAt.slice(0, 16).replace(/[:T]/g, '-');
+  return `wind-tunnel-${r.meta.model ? `${safeFileName(r.meta.model)}-` : ''}${stamp}`;
+}
+
+// ---------------------------------------------------------------------------
 // Console + table view
 // ---------------------------------------------------------------------------
 function logConsole(line) {
@@ -438,6 +537,12 @@ function init() {
   $('btnDemo').addEventListener('click', () => (state.source === 'demo' ? stopDemo() : startDemo()));
   $('btnFault').addEventListener('click', () => state.sim?.triggerFault());
   $('btnDisconnect').addEventListener('click', disconnect);
+  $('btnReportNow').addEventListener('click', () => openReport(false));
+  $('btnReportClose').addEventListener('click', () => { $('report').hidden = true; });
+  $('btnReportPoints').addEventListener('click', () => state.report && downloadText(`${reportFileStem()}-test-points.csv`, testPointsCsv(state.report)));
+  $('btnReportAll').addEventListener('click', () => state.report && downloadText(`${reportFileStem()}-readings.csv`, readingsCsv(state.report)));
+  $('btnReportPrint').addEventListener('click', () => window.print());
+  $('selReadings').addEventListener('change', renderReadings);
   $('btnTheme').addEventListener('click', toggleTheme);
   $('btnPause').addEventListener('click', (e) => {
     state.paused = !state.paused;
